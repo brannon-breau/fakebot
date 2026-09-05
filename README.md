@@ -17,7 +17,7 @@ everything that happens after the command fires.
 
 ## Adding / changing commands
 
-Commands are plain Python in [src/bot.py](src/bot.py) — no config file. Add a
+Commands are plain Python in [bot.py](bot.py) — no config file. Add a
 new one with the `@tree.command(...)` decorator and call `notify_n8n`:
 
 ```python
@@ -54,9 +54,18 @@ Commands are re-synced with Discord automatically every time the bot starts.
 
 ## Run
 
-```
-docker compose up --build -d
-```
+This runs inside the existing `python-runner` container rather than its own
+Docker image:
+
+1. Copy this folder onto the host under `python-runner`'s appdata directory,
+   e.g. `/mnt/user/appdata/python-runner/discord-slash-bridge/`.
+2. Bind-mount that folder to `/scripts` in the container and set the
+   `SCRIPT_PATH` env var to `/scripts/bot.py`.
+3. Set `DISCORD_TOKEN`, `GUILD_ID` (optional), and `N8N_WEBHOOK_URL` as env
+   vars on the container itself (or via a `.env` file dropped in this same
+   folder — `bot.py` loads one if present).
+4. `requirements.txt` is picked up and installed automatically by the runner
+   on startup.
 
 ## Payload sent to n8n
 

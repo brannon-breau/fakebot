@@ -1,0 +1,15 @@
+{
+  "name": "discord-slash-bridge",
+  "version": "1.0.0",
+  "description": "Minimal Discord bot that registers slash commands and forwards their invocations to an n8n webhook",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "register": "node src/register-commands.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5"
+  }
+}

@@ -30,8 +30,9 @@ that happens after the command fires.
 3. In n8n, create a Webhook node (POST) and put its production URL in
    `N8N_WEBHOOK_URL`.
 4. Edit `commands.json` to define whatever slash commands you want exposed.
-   Option `type` values match `discord.js`'s `ApplicationCommandOptionType`
-   names (`STRING`, `INTEGER`, `BOOLEAN`, `USER`, `CHANNEL`, etc.).
+   Option `type` values match Discord's application command option types
+   (`STRING`, `INTEGER`, `BOOLEAN`, `USER`, `CHANNEL`, `ROLE`, `MENTIONABLE`,
+   `NUMBER`, `ATTACHMENT`).
 
 ## Run
 

@@ -4,55 +4,31 @@ from datetime import datetime, timezone
 
 import aiohttp
 import discord
+from discord import app_commands
 from dotenv import load_dotenv
-
-from command_schema import load_commands, to_api_command
 
 load_dotenv()
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
-DISCORD_CLIENT_ID = os.environ.get("DISCORD_CLIENT_ID")
 GUILD_ID = os.environ.get("GUILD_ID")
 N8N_WEBHOOK_URL = os.environ.get("N8N_WEBHOOK_URL")
 
-if not DISCORD_TOKEN or not DISCORD_CLIENT_ID:
-    print("Missing DISCORD_TOKEN or DISCORD_CLIENT_ID in environment.", file=sys.stderr)
+if not DISCORD_TOKEN:
+    print("Missing DISCORD_TOKEN in environment.", file=sys.stderr)
     sys.exit(1)
 if not N8N_WEBHOOK_URL:
     print("Missing N8N_WEBHOOK_URL in environment.", file=sys.stderr)
     sys.exit(1)
 
-API_BASE = "https://discord.com/api/v10"
-
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
+tree = app_commands.CommandTree(client)
 
 
-async def sync_commands(session: aiohttp.ClientSession):
-    body = [to_api_command(cmd) for cmd in load_commands()]
-
-    if GUILD_ID:
-        url = f"{API_BASE}/applications/{DISCORD_CLIENT_ID}/guilds/{GUILD_ID}/commands"
-        scope = f"guild {GUILD_ID}"
-    else:
-        url = f"{API_BASE}/applications/{DISCORD_CLIENT_ID}/commands"
-        scope = "globally"
-
-    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
-    async with session.put(url, json=body, headers=headers) as resp:
-        data = await resp.json()
-        if resp.status >= 400:
-            print(f"Failed to sync commands ({resp.status}): {data}", file=sys.stderr)
-            return
-        names = ", ".join(c["name"] for c in data)
-        print(f"Synced {len(data)} command(s) to {scope}: {names}")
-
-
-async def forward_to_n8n(session: aiohttp.ClientSession, interaction: discord.Interaction):
-    data = interaction.data or {}
+async def notify_n8n(interaction: discord.Interaction, command: str, options: dict):
     payload = {
-        "command": data.get("name"),
-        "options": data.get("options", []),
+        "command": command,
+        "options": options,
         "user": {
             "id": str(interaction.user.id),
             "username": interaction.user.name,
@@ -63,23 +39,6 @@ async def forward_to_n8n(session: aiohttp.ClientSession, interaction: discord.In
         "receivedAt": datetime.now(timezone.utc).isoformat(),
     }
 
-    async with session.post(N8N_WEBHOOK_URL, json=payload) as resp:
-        if resp.status >= 400:
-            raise RuntimeError(f"n8n webhook responded with {resp.status}")
-
-
-@client.event
-async def on_ready():
-    print(f"Logged in as {client.user}")
-    async with aiohttp.ClientSession() as session:
-        await sync_commands(session)
-
-
-@client.event
-async def on_interaction(interaction: discord.Interaction):
-    if interaction.type != discord.InteractionType.application_command:
-        return
-
     try:
         await interaction.response.send_message("Got it ✅", ephemeral=True)
     except discord.HTTPException as err:
@@ -87,9 +46,44 @@ async def on_interaction(interaction: discord.Interaction):
 
     try:
         async with aiohttp.ClientSession() as session:
-            await forward_to_n8n(session, interaction)
+            async with session.post(N8N_WEBHOOK_URL, json=payload) as resp:
+                if resp.status >= 400:
+                    raise RuntimeError(f"n8n webhook responded with {resp.status}")
     except Exception as err:
         print(f"Failed to forward interaction to n8n: {err}", file=sys.stderr)
 
 
-client.run(DISCORD_TOKEN)
+# --- Slash commands ---------------------------------------------------------
+# Add new commands here. Each one should just ack + hand off to n8n; no other
+# logic belongs in this bot.
+
+
+@tree.command(name="ping", description="Check that the bot is alive")
+async def ping(interaction: discord.Interaction):
+    await notify_n8n(interaction, "ping", {})
+
+
+@tree.command(name="hello", description="Send a greeting request to n8n")
+@app_commands.describe(name="Who to greet")
+async def hello(interaction: discord.Interaction, name: str = ""):
+    await notify_n8n(interaction, "hello", {"name": name})
+
+
+# -----------------------------------------------------------------------------
+
+
+@client.event
+async def on_ready():
+    print(f"Logged in as {client.user}")
+    if GUILD_ID:
+        guild = discord.Object(id=int(GUILD_ID))
+        tree.copy_global_to(guild=guild)
+        synced = await tree.sync(guild=guild)
+        print(f"Synced {len(synced)} command(s) to guild {GUILD_ID}: {', '.join(c.name for c in synced)}")
+    else:
+        synced = await tree.sync()
+        print(f"Synced {len(synced)} command(s) globally: {', '.join(c.name for c in synced)}")
+
+
+if __name__ == "__main__":
+    client.run(DISCORD_TOKEN)
